@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: AI News Curator Lite Day 4 serverless backend
+Description: AI News Curator Lite serverless backend
 
 Globals:
   Function:
@@ -9,28 +9,27 @@ Globals:
     MemorySize: 128
     Environment:
       Variables:
-        TABLE_NAME: !Ref AiNewsCuratorLiteTable
+        KEYWORD_TABLE_NAME: !Ref KeywordTable
 
 Resources:
   AiNewsCuratorLiteApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      StageName: dev
+      StageName: Prod
 
-  AiNewsCuratorLiteTable:
+  KeywordTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: ai_news_curator_lite_table
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-        - AttributeName: PK
+        - AttributeName: user_id
           AttributeType: S
-        - AttributeName: SK
+        - AttributeName: keyword
           AttributeType: S
       KeySchema:
-        - AttributeName: PK
+        - AttributeName: user_id
           KeyType: HASH
-        - AttributeName: SK
+        - AttributeName: keyword
           KeyType: RANGE
 
   AiNewsCuratorLiteFunction:
@@ -39,8 +38,15 @@ Resources:
       CodeUri: ../backend/
       Handler: app.lambda_handler
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AiNewsCuratorLiteTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - dynamodb:DeleteItem
+              Resource: !GetAtt KeywordTable.Arn
       Events:
         HealthApi:
           Type: HttpApi
@@ -66,11 +72,17 @@ Resources:
             ApiId: !Ref AiNewsCuratorLiteApi
             Path: /keywords
             Method: GET
+        DeleteKeywordApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AiNewsCuratorLiteApi
+            Path: /keywords/{keyword}
+            Method: DELETE
 
 Outputs:
   ApiEndpoint:
     Description: HTTP API endpoint
-    Value: !Sub 'https://${AiNewsCuratorLiteApi}.execute-api.${AWS::Region}.amazonaws.com/dev'
-  TableName:
+    Value: !Sub 'https://${AiNewsCuratorLiteApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+  KeywordTableName:
     Description: DynamoDB table name
-    Value: !Ref AiNewsCuratorLiteTable
+    Value: !Ref KeywordTable

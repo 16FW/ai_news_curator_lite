@@ -9,5 +9,7 @@
     }
   },
   "queryStringParameters": null,
-  "body": null
+  "pathParameters": null,
+  "body": null,
+  "isBase64Encoded": false
 }

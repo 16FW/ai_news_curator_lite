@@ -1,18 +1,15 @@
 {
   "version": "2.0",
-  "routeKey": "POST /keywords",
+  "routeKey": "GET /keywords",
   "rawPath": "/keywords",
   "requestContext": {
     "http": {
-      "method": "POST",
+      "method": "GET",
       "path": "/keywords"
     }
   },
-  "headers": {
-    "content-type": "application/json"
-  },
   "queryStringParameters": null,
   "pathParameters": null,
-  "body": "{\"keyword\":\"aws\"}",
+  "body": null,
   "isBase64Encoded": false
 }

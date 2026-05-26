@@ -1,0 +1,17 @@
+{
+  "version": "2.0",
+  "routeKey": "DELETE /keywords/{keyword}",
+  "rawPath": "/keywords/aws",
+  "requestContext": {
+    "http": {
+      "method": "DELETE",
+      "path": "/keywords/aws"
+    }
+  },
+  "queryStringParameters": null,
+  "pathParameters": {
+    "keyword": "aws"
+  },
+  "body": null,
+  "isBase64Encoded": false
+}

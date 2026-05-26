@@ -7,11 +7,12 @@ from boto3.dynamodb.conditions import Key
 
 
 SERVICE_NAME = "ai_news_curator_lite"
-USER_ID = "demo"
-TABLE_NAME = os.environ.get("TABLE_NAME", "ai_news_curator_lite_table")
+# TODO: Replace the MVP demo user with a JWT/Cognito user id after auth is added.
+USER_ID = "demo_user"
+TABLE_NAME = os.environ.get("KEYWORD_TABLE_NAME")
 
 dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table(TABLE_NAME)
+table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
 
 
 def response(status_code, body):
@@ -31,11 +32,11 @@ def error_response(status_code, message):
 def parse_body(event):
     raw_body = event.get("body")
     if not raw_body:
-        return {}
+        return None
 
     try:
         return json.loads(raw_body)
-    except json.JSONDecodeError:
+    except (TypeError, json.JSONDecodeError):
         return None
 
 
@@ -82,6 +83,9 @@ def handle_get_news(event):
 
 
 def handle_create_keyword(event):
+    if table is None:
+        return error_response(500, "keyword_table_not_configured")
+
     body = parse_body(event)
     if body is None:
         return error_response(400, "invalid_json_body")
@@ -91,38 +95,68 @@ def handle_create_keyword(event):
         return error_response(400, "keyword_required")
 
     item = {
-        "PK": f"USER#{USER_ID}",
-        "SK": f"KEYWORD#{keyword}",
+        "user_id": USER_ID,
         "keyword": keyword,
-        "createdAt": now_iso()
+        "created_at": now_iso()
     }
 
     print(f"Creating keyword item: {item}")
     table.put_item(Item=item)
 
     return response(201, {
-        "message": "keyword_created",
-        "keyword": keyword
+        "message": "keyword created",
+        "item": item
     })
 
 
 def handle_get_keywords():
-    pk = f"USER#{USER_ID}"
-    print(f"Querying keywords for PK={pk}")
+    if table is None:
+        return error_response(500, "keyword_table_not_configured")
+
+    print(f"Querying keywords for user_id={USER_ID}")
 
     result = table.query(
-        KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with("KEYWORD#")
+        KeyConditionExpression=Key("user_id").eq(USER_ID)
     )
 
     items = [
         {
+            "user_id": item.get("user_id"),
             "keyword": item.get("keyword"),
-            "createdAt": item.get("createdAt")
+            "created_at": item.get("created_at")
         }
         for item in result.get("Items", [])
     ]
 
     return response(200, {"items": items})
+
+
+def handle_delete_keyword(event):
+    if table is None:
+        return error_response(500, "keyword_table_not_configured")
+
+    path_parameters = event.get("pathParameters") or {}
+    keyword = str(path_parameters.get("keyword", "")).strip().lower()
+    if not keyword:
+        path = event.get("rawPath") or event.get("path", "")
+        if path.startswith("/keywords/"):
+            keyword = path.removeprefix("/keywords/").strip().lower()
+
+    if not keyword:
+        return error_response(400, "keyword_required")
+
+    print(f"Deleting keyword={keyword} for user_id={USER_ID}")
+    table.delete_item(
+        Key={
+            "user_id": USER_ID,
+            "keyword": keyword
+        }
+    )
+
+    return response(200, {
+        "message": "keyword deleted",
+        "keyword": keyword
+    })
 
 
 def lambda_handler(event, context):
@@ -140,6 +174,8 @@ def lambda_handler(event, context):
             return handle_create_keyword(event)
         if route == "GET /keywords":
             return handle_get_keywords()
+        if route == "DELETE /keywords/{keyword}" or route.startswith("DELETE /keywords/"):
+            return handle_delete_keyword(event)
 
         return error_response(404, "not_found")
     except Exception as exc:
