@@ -8,6 +8,9 @@
       "path": "/keywords"
     }
   },
+  "headers": {
+    "accept": "application/json"
+  },
   "queryStringParameters": null,
   "pathParameters": null,
   "body": null,

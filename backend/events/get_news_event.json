@@ -8,8 +8,13 @@
       "path": "/news"
     }
   },
+  "headers": {
+    "accept": "application/json"
+  },
   "queryStringParameters": {
     "keyword": "aws"
   },
-  "body": null
+  "pathParameters": null,
+  "body": null,
+  "isBase64Encoded": false
 }

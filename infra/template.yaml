@@ -17,6 +17,17 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: Prod
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowMethods:
+          - GET
+          - POST
+          - DELETE
+          - OPTIONS
 
   KeywordTable:
     Type: AWS::DynamoDB::Table

@@ -15,6 +15,13 @@ NEWS_TABLE_NAME = os.environ.get("NEWS_TABLE_NAME")
 dynamodb = boto3.resource("dynamodb")
 keyword_table = dynamodb.Table(KEYWORD_TABLE_NAME) if KEYWORD_TABLE_NAME else None
 news_table = dynamodb.Table(NEWS_TABLE_NAME) if NEWS_TABLE_NAME else None
+MAX_KEYWORD_LENGTH = 40
+ALLOWED_KEYWORD_SYMBOLS = set(" -_")
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS"
+}
 
 SEED_NEWS_BY_KEYWORD = {
     "ai": [
@@ -53,18 +60,47 @@ SEED_NEWS_BY_KEYWORD = {
 }
 
 
-def response(status_code, body):
+def response(status_code, body, success=True, message="ok"):
     return {
         "statusCode": status_code,
         "headers": {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            **CORS_HEADERS
         },
-        "body": json.dumps(body, ensure_ascii=False)
+        "body": json.dumps({
+            "success": success,
+            "data": body if success else None,
+            "message": message
+        }, ensure_ascii=False)
     }
 
 
-def error_response(status_code, message):
-    return response(status_code, {"message": message})
+def error_response(status_code, code, message=None):
+    error_message = message or code
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json",
+            **CORS_HEADERS
+        },
+        "body": json.dumps({
+            "success": False,
+            "data": None,
+            "message": error_message,
+            "error": {
+                "code": code,
+                "message": error_message
+            }
+        }, ensure_ascii=False)
+    }
+
+
+def cors_preflight_response():
+    return {
+        "statusCode": 204,
+        "headers": CORS_HEADERS,
+        "body": ""
+    }
 
 
 def parse_body(event):
@@ -76,6 +112,21 @@ def parse_body(event):
         return json.loads(raw_body)
     except (TypeError, json.JSONDecodeError):
         return None
+
+
+def validate_keyword(value, field_name="keyword"):
+    if not isinstance(value, str):
+        return None, f"{field_name}_must_be_string"
+
+    keyword = value.strip().lower()
+    if not keyword:
+        return None, f"{field_name}_required"
+    if len(keyword) > MAX_KEYWORD_LENGTH:
+        return None, f"{field_name}_too_long"
+    if any(not (char.isalnum() or char in ALLOWED_KEYWORD_SYMBOLS) for char in keyword):
+        return None, f"{field_name}_invalid_characters"
+
+    return keyword, None
 
 
 def get_route(event):
@@ -103,7 +154,10 @@ def handle_health():
 
 def handle_get_news(event):
     query_params = event.get("queryStringParameters") or {}
-    keyword = (query_params.get("keyword") or "ai").strip().lower()
+    keyword_value = query_params.get("keyword") or "ai"
+    keyword, validation_error = validate_keyword(keyword_value)
+    if validation_error:
+        return error_response(400, validation_error)
 
     print(f"Returning mock news for keyword={keyword}")
     return response(200, {
@@ -127,10 +181,12 @@ def handle_create_keyword(event):
     body = parse_body(event)
     if body is None:
         return error_response(400, "invalid_json_body")
+    if not isinstance(body, dict):
+        return error_response(400, "json_body_must_be_object")
 
-    keyword = str(body.get("keyword", "")).strip().lower()
-    if not keyword:
-        return error_response(400, "keyword_required")
+    keyword, validation_error = validate_keyword(body.get("keyword"))
+    if validation_error:
+        return error_response(400, validation_error)
 
     item = {
         "user_id": USER_ID,
@@ -142,9 +198,8 @@ def handle_create_keyword(event):
     keyword_table.put_item(Item=item)
 
     return response(201, {
-        "message": "keyword created",
         "item": item
-    })
+    }, message="keyword created")
 
 
 def handle_get_keywords():
@@ -174,14 +229,15 @@ def handle_delete_keyword(event):
         return error_response(500, "keyword_table_not_configured")
 
     path_parameters = event.get("pathParameters") or {}
-    keyword = str(path_parameters.get("keyword", "")).strip().lower()
-    if not keyword:
+    keyword_value = path_parameters.get("keyword", "")
+    if not keyword_value:
         path = event.get("rawPath") or event.get("path", "")
         if path.startswith("/keywords/"):
-            keyword = path.removeprefix("/keywords/").strip().lower()
+            keyword_value = path.removeprefix("/keywords/")
 
-    if not keyword:
-        return error_response(400, "keyword_required")
+    keyword, validation_error = validate_keyword(keyword_value)
+    if validation_error:
+        return error_response(400, validation_error)
 
     print(f"Deleting keyword={keyword} for user_id={USER_ID}")
     keyword_table.delete_item(
@@ -192,9 +248,8 @@ def handle_delete_keyword(event):
     )
 
     return response(200, {
-        "message": "keyword deleted",
         "keyword": keyword
-    })
+    }, message="keyword deleted")
 
 
 def get_user_keywords():
@@ -276,6 +331,8 @@ def lambda_handler(event, context):
         route = get_route(event)
         print(f"Resolved route: {route}")
 
+        if route.startswith("OPTIONS "):
+            return cors_preflight_response()
         if route == "GET /health":
             return handle_health()
         if route == "GET /news/today":
